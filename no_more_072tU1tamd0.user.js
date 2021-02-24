@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         No more 072tU1tamd0 on Plurk
 // @name:zh-tw   不要在噗浪端火鍋
-// @version      0.2.0
-// @description  No more 072tU1tamd0 on Plurk
+// @version      0.2.1
+// @description  Let the links which will redirect to youtu.be/072tU1tamd0 show their original links
 // @description:zh-tw 讓統神端火鍋連結現出原形
 // @match        https://www.plurk.com/*
 // @require      https://code.jquery.com/jquery-3.5.1.min.js
@@ -64,21 +64,16 @@
         url = m ? m[1] : url;
       });
     }
-    return new Promise(function (resolve, reject) {
-      let pass = true;
-      urlList.forEach(u => {
-        u = u.replaceAll('*', '.*');
-        pass = pass && !url.match(new RegExp('^' + u + '$'));
-      });
-      if (!pass) {
-        getHtmlText(url).then(function (res) {
-          const m = res.text.match(/<title>(.+)<\/title>/);
-          resolve({ url: res.url, title: m ? m[1] : res.url });
-        }).catch(function () { resolve(null); });
-        return;
-      }
-      resolve(null);
+    let pass = true;
+    urlList.forEach(u => {
+      u = u.replaceAll('*', '.*');
+      pass = pass && !url.match(new RegExp('^' + u + '$'));
     });
+    if (pass) return null;
+    return getHtmlText(url).then(res => {
+      const m = res.text.match(/<title>(.+)<\/title>/);
+      return { url: res.url, title: m ? m[1] : res.url };
+    }).catch(function () { return null; });
   }
 
   function getHtmlText (url) {
@@ -107,45 +102,41 @@
     if (window.location.pathname === '/settings/timeline') {
       atSetting();
     } else if (window.location.pathname.match(/^\/p\/[A-Za-z\d]+$/)) {
+      handlePlurk(document.querySelector('.bigplurk'));
       const respMo = new MutationObserver(responseMutationHandler);
       respMo.observe($('#plurk_responses .list')[0], { childList: true });
-      handlePlurk(document.querySelector('.bigplurk'));
-    } else if ($('#dash-profile .nick_name').text() ===
-        window.location.pathname.replace('/', '@')) {
-      const timelineMo = new MutationObserver(
-        records => records.forEach(mu => mu.addedNodes.forEach(handlePlurk))
-      );
-      timelineMo.observe($('div.block_cnt')[0], { childList: true });
+      // pop window
       const popMo = new MutationObserver(
         records => records.forEach(mu => mu.addedNodes.forEach(handlePlurk))
       );
       popMo.observe($('.pop-window-view .cbox_plurk_holder')[0],
         { childList: true });
+      const cboxMo = new MutationObserver(responseMutationHandler);
+      cboxMo.observe($('#cbox_response .list')[0], { childList: true });
+    } else if ($('#dash-profile .nick_name').text() ===
+        window.location.pathname.replace('/', '@')) {
+      // timeline
+      const timelineMo = new MutationObserver(
+        records => records.forEach(mu => mu.addedNodes.forEach(handlePlurk))
+      );
+      timelineMo.observe($('div.block_cnt')[0], { childList: true });
       const formMo = new MutationObserver(responseMutationHandler);
       formMo.observe($('#form_holder .list')[0], { childList: true });
+      // pop window
+      const popMo = new MutationObserver(
+        records => records.forEach(mu => mu.addedNodes.forEach(handlePlurk))
+      );
+      popMo.observe($('.pop-window-view .cbox_plurk_holder')[0],
+        { childList: true });
       const cboxMo = new MutationObserver(responseMutationHandler);
       cboxMo.observe($('#cbox_response .list')[0], { childList: true });
     }
   }
 
   function responseMutationHandler (records) {
-    const revert = valueGetSet('revert');
-    const hide = valueGetSet('hide');
     records.forEach(mu => mu.addedNodes.forEach(resp => {
-      const anchors = $(resp).find('.text_holder a.ex_link').toArray();
-      const promises = [];
-      anchors.forEach(a => promises.push(detectUrl(a.href)));
-      Promise.all(promises).then(function (res) {
-        let pass = true;
-        for (let i = 0; i < res.length; ++i) {
-          pass = pass && !res[i];
-          if (res[i] && revert) {
-            anchors[i].title = ['原始假連結:', anchors[i].href].join(' ');
-            anchors[i].href = res[i].url;
-            anchors[i].innerHTML = res[i].title;
-          }
-        }
-        if (!pass && hide) {
+      handlePlurk(resp).then(pass => {
+        if (!pass && valueGetSet('hide')) {
           $(resp).children().addClass('hidden');
           $('<div>此回應已隱藏</div>').on('click', function () {
             $(resp).children().toggleClass('hidden');
@@ -160,14 +151,17 @@
     const anchors = $(plurk).find('.text_holder a.ex_link').toArray();
     const promises = [];
     anchors.forEach(a => promises.push(detectUrl(a.href)));
-    Promise.all(promises).then(function (res) {
+    return Promise.all(promises).then(res => {
+      let pass = true;
       for (let i = 0; i < res.length; ++i) {
+        pass = pass && !res[i];
         if (res[i] && revert) {
-          anchors[i].title = ['原始假連結:', anchors[i].href].join(' ');
+          anchors[i].title = '原始假連結:' + anchors[i].href;
           anchors[i].href = res[i].url;
           anchors[i].innerHTML = res[i].title;
         }
       }
+      return pass;
     });
   }
 
