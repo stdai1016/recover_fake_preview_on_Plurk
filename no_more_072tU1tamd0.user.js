@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         No more 072tU1tamd0 on Plurk
 // @name:zh-tw   不要在噗浪端火鍋
-// @version      0.1.1
+// @version      0.2.0
 // @description  No more 072tU1tamd0 on Plurk
 // @description:zh-tw 讓統神端火鍋連結現出原形
 // @match        https://www.plurk.com/*
@@ -44,14 +44,16 @@
     return GM_getValue(key);
   }
 
-  /* ======= utils ======= */
+  /* ============== */
   const REG_PICSEE = [
     // /http[s ]:\/\/pics.ee\/.*/,
     // /http[s ]:\/\/pse.ee\/.*/,
     /^https?:\/\/.*\.piee.pw\/.*$/,
     /^https?:\/\/.*\.pse.is\/.*$/
   ];
-  async function detectUrl (url, urlList) {
+
+  async function detectUrl (url) {
+    const urlList = valueGetSet('blacklist');
     let m = null;
     REG_PICSEE.forEach(r => { if (!m) m = url.match(r); });
     if (m) {
@@ -78,6 +80,7 @@
       resolve(null);
     });
   }
+
   function getHtmlText (url) {
     return new Promise(function (resolve, reject) {
       try {
@@ -95,7 +98,6 @@
     });
   }
 
-  /**/
   window.onurlchange = function () { setTimeout(detectPage, 100); };
   setTimeout(detectPage, 100);
 
@@ -103,116 +105,72 @@
 
   function detectPage () {
     if (window.location.pathname === '/settings/timeline') {
-      console.debug('At setting');
       atSetting();
     } else if (window.location.pathname.match(/^\/p\/[A-Za-z\d]+$/)) {
-      console.debug('At plurk');
-      atBigPlurk();
-    } else {
-      const uid = $('#dash-profile .nick_name');
-      if (uid.length &&
-          uid[0].innerText.replace('@', '/') === window.location.pathname) {
-        console.debug('At home');
-        atHome();
-      }
-      console.debug('not match');
+      const respMo = new MutationObserver(responseMutationHandler);
+      respMo.observe($('#plurk_responses .list')[0], { childList: true });
+      handlePlurk(document.querySelector('.bigplurk'));
+    } else if ($('#dash-profile .nick_name').text() ===
+        window.location.pathname.replace('/', '@')) {
+      const timelineMo = new MutationObserver(
+        records => records.forEach(mu => mu.addedNodes.forEach(handlePlurk))
+      );
+      timelineMo.observe($('div.block_cnt')[0], { childList: true });
+      const popMo = new MutationObserver(
+        records => records.forEach(mu => mu.addedNodes.forEach(handlePlurk))
+      );
+      popMo.observe($('.pop-window-view .cbox_plurk_holder')[0],
+        { childList: true });
+      const formMo = new MutationObserver(responseMutationHandler);
+      formMo.observe($('#form_holder .list')[0], { childList: true });
+      const cboxMo = new MutationObserver(responseMutationHandler);
+      cboxMo.observe($('#cbox_response .list')[0], { childList: true });
     }
   }
-  function atHome () {
-    const blacklist = valueGetSet('blacklist');
+
+  function responseMutationHandler (records) {
     const revert = valueGetSet('revert');
     const hide = valueGetSet('hide');
-    const mo = new MutationObserver(r => r.forEach(mu => {
-      if (mu.addedNodes.length > 0 &&
-          mu.target.classList.contains('block_cnt')) {
-        mu.addedNodes.forEach(plurk => {
-          const $a = $(plurk).find('.text_holder a.ex_link').toArray();
-          const promises = [];
-          $a.forEach(a => promises.push(detectUrl(a.href, blacklist)));
-          Promise.all(promises).then(function (res) {
-            for (let i = 0; i < res.length; ++i) {
-              if (res[i] && revert) {
-                $a[i].title = ['原始假連結:', $a[i].href].join(' ');
-                $a[i].href = res[i].url;
-                $a[i].innerHTML = res[i].title;
-              }
-            }
-          });
-        });
-      } else if (mu.addedNodes.length > 0 &&
-          mu.target.classList.contains('list')) {
-        mu.addedNodes.forEach(resp => {
-          const $a = $(resp).find('.text_holder a.ex_link').toArray();
-          const promises = [];
-          $a.forEach(a => promises.push(detectUrl(a.href, blacklist)));
-          Promise.all(promises).then(function (res) {
-            let pass = true;
-            for (let i = 0; i < res.length; ++i) {
-              pass = pass && !res[i];
-              if (res[i] && revert) {
-                $a[i].title = ['原始假連結:', $a[i].href].join(' ');
-                $a[i].href = res[i].url;
-                $a[i].innerHTML = res[i].title;
-              }
-            }
-            if (!pass && hide) {
-              $(resp).children().addClass('hidden');
-              $('<div>此回應已隱藏</div>').on('click', function () {
-                $(resp).children().toggleClass('hidden');
-              }).css('font-style', 'italic').appendTo(resp);
-            }
-          });
-        });
-      }
+    records.forEach(mu => mu.addedNodes.forEach(resp => {
+      const anchors = $(resp).find('.text_holder a.ex_link').toArray();
+      const promises = [];
+      anchors.forEach(a => promises.push(detectUrl(a.href)));
+      Promise.all(promises).then(function (res) {
+        let pass = true;
+        for (let i = 0; i < res.length; ++i) {
+          pass = pass && !res[i];
+          if (res[i] && revert) {
+            anchors[i].title = ['原始假連結:', anchors[i].href].join(' ');
+            anchors[i].href = res[i].url;
+            anchors[i].innerHTML = res[i].title;
+          }
+        }
+        if (!pass && hide) {
+          $(resp).children().addClass('hidden');
+          $('<div>此回應已隱藏</div>').on('click', function () {
+            $(resp).children().toggleClass('hidden');
+          }).css('font-style', 'italic').appendTo(resp);
+        }
+      });
     }));
-    mo.observe(document.body, { childList: true, subtree: true });
   }
-  function atBigPlurk () {
-    const blacklist = valueGetSet('blacklist');
+
+  function handlePlurk (plurk) {
     const revert = valueGetSet('revert');
-    const hide = valueGetSet('hide');
-    // 噗首
-    const $a = $('.text_holder a.ex_link').toArray();
+    const anchors = $(plurk).find('.text_holder a.ex_link').toArray();
     const promises = [];
-    $a.forEach(a => promises.push(detectUrl(a.href, blacklist)));
+    anchors.forEach(a => promises.push(detectUrl(a.href)));
     Promise.all(promises).then(function (res) {
       for (let i = 0; i < res.length; ++i) {
         if (res[i] && revert) {
-          $a[i].title = ['原始假連結:', $a[i].href].join(' ');
-          $a[i].href = res[i].url;
-          $a[i].innerHTML = res[i].title;
+          anchors[i].title = ['原始假連結:', anchors[i].href].join(' ');
+          anchors[i].href = res[i].url;
+          anchors[i].innerHTML = res[i].title;
         }
       }
     });
-    // 回應
-    const mo = new MutationObserver(r => r.forEach(mu => {
-      if (mu.addedNodes.length > 0 && mu.target.classList.contains('list')) {
-        mu.addedNodes.forEach(resp => {
-          const $a = $(resp).find('.text_holder a.ex_link').toArray();
-          const promises = [];
-          $a.forEach(a => promises.push(detectUrl(a.href, blacklist)));
-          Promise.all(promises).then(function (res) {
-            let pass = true;
-            for (let i = 0; i < res.length; ++i) {
-              pass = pass && !res[i];
-              if (res[i] && revert) {
-                $a[i].title = ['原始假連結:', $a[i].href].join(' ');
-                $a[i].href = res[i].url;
-                $a[i].innerHTML = res[i].title;
-              }
-            }
-            if (!pass && hide) {
-              $(resp).children().addClass('hidden');
-              $('<div>此回應已隱藏</div>').on('click', function () {
-                $(resp).children().toggleClass('hidden');
-              }).css('font-style', 'italic').appendTo(resp);
-            }
-          });
-        });
-      }
-    }));
-    mo.observe(document.body, { childList: true, subtree: true });
   }
+
   function atSetting () {
     GM_addStyle(
       '.switch-holder {display: block; padding: 4px 1px; margin-left: 8px;}' +
