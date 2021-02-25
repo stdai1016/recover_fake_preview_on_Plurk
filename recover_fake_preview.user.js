@@ -1,11 +1,12 @@
 // ==UserScript==
-// @name         No more 072tU1tamd0 on Plurk
-// @name:zh-tw   不要在噗浪端火鍋
+// @name         Recover fake preview on Plurk
+// @name:zh-tw   還原在噗浪上的偽裝預覽連結
 // @version      0.2.1
-// @description  Let the links which will redirect to youtu.be/072tU1tamd0 show their original links
-// @description:zh-tw 讓統神端火鍋連結現出原形
+// @description  Let the links which have fake preview show their original links
+// @description:zh-tw 還原在噗浪上的偽裝預覽連結
 // @match        https://www.plurk.com/*
 // @require      https://code.jquery.com/jquery-3.5.1.min.js
+// @license      MIT
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -27,12 +28,7 @@
   const DEFAULT_VALUE = {
     revert: true,
     hide: true,
-    blacklist: [
-      'https://www.youtube.com/watch?*v=072tU1tamd0*',
-      'https://youtu.be/072tU1tamd0*',
-      'https://www.youtube.com/watch?*v=dMTy6C4UiQ4*',
-      'https://youtu.be/dMTy6C4UiQ4*'
-    ]
+    blacklist: []
   };
   Object.keys(DEFAULT_VALUE).forEach(k => {
     if (typeof GM_getValue(k) !== typeof DEFAULT_VALUE[k]) {
