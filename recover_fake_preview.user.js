@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Recover fake preview on Plurk
 // @name:zh-tw   還原在噗浪上的偽裝預覽連結
-// @version      0.2.2
+// @version      0.3.0
 // @description  Let the links which have fake preview show their original links
 // @description:zh-tw 還原在噗浪上的偽裝預覽連結
 // @match        https://www.plurk.com/*
@@ -31,6 +31,7 @@
   'use strict';
   /* ======= storage ======= */
   const DEFAULT_VALUE = {
+    detect: true,
     revert: true,
     hide: true,
     blacklist: []
@@ -175,10 +176,32 @@
   }
 
   function handlePlurk (plurk) {
+    const detect = valueGetSet('detect');
     const revert = valueGetSet('revert');
     const anchors = $(plurk).find('.text_holder a.ex_link').toArray();
     const promises = [];
-    anchors.forEach(a => promises.push(detectUrl(a.href)));
+    anchors.forEach(a => {
+      if (detect) promises.push(detectUrl(a.href));
+      else {
+        a.onclick = function (e) {
+          if (a.classList.contains('pass')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          detectUrl(a.href).then(res => {
+            if (res) {
+              console.debug(res);
+              if (window.confirm('此連結導向之目標\n\n' + res.title + '\n' +
+                  res.url + '\n\n在黑名單中，確定要開起？')) {
+                $('<a target="_blank" href="' + res.url + '"></a>')[0].click();
+              }
+            } else {
+              a.classList.add('pass');
+              a.click();
+            }
+          });
+        };
+      }
+    });
     return Promise.all(promises).then(res => {
       let pass = true;
       for (let i = 0; i < res.length; ++i) {
@@ -207,7 +230,9 @@
     );
     const $setting = $(
       '<div class="form-table"><div class="form-item">' +
-      '<div class="desc">不要在噗浪端鍋</div>' +
+      '<div class="desc">還原偽裝預覽連結</div>' +
+      '<div class="switch-holder"><div id="detect" class="switch"><div></div>' +
+      ' </div><label>主動檢查網址</label></div>' +
       '<div class="switch-holder"><div id="revert" class="switch"><div></div>' +
       ' </div><label>還原網址</label></div>' +
       '<div class="switch-holder"><div id="hide" class="switch"><div></div>' +
@@ -216,13 +241,25 @@
       ' <textarea></textarea><button>儲存黑名單</button></div>' +
       '</div></div>'
     );
+    $setting.find('.switch, .switch>div').css('transition', '400ms');
     $setting.find('.switch').each(function () {
-      if (valueGetSet(this.id)) this.classList.add('checked');
-      this.onclick = function () {
-        this.classList.toggle('checked');
-        valueGetSet(this.id, this.classList.contains('checked'));
-      };
+      if (valueGetSet(this.id) && valueGetSet('detect')) {
+        this.classList.add('checked');
+      }
+      this.addEventListener('click', function () {
+        if (valueGetSet('detect') || this.id === 'detect') {
+          this.classList.toggle('checked');
+          valueGetSet(this.id, this.classList.contains('checked'));
+        }
+      }, false);
     });
+    $setting.find('#detect')[0].addEventListener('click', function () {
+      if (valueGetSet('detect')) {
+        $setting.find('.switch').each(function () {
+          if (valueGetSet(this.id)) this.classList.add('checked');
+        });
+      } else { $setting.find('.switch').removeClass('checked'); }
+    }, false);
     const blacklist = $setting.find('textarea')[0];
     valueGetSet('blacklist').forEach(url => { blacklist.value += url + '\n'; });
     $setting.find('button').on('click', function () {
