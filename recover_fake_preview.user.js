@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Recover fake preview on Plurk
 // @name:zh-tw   還原在噗浪上的偽裝預覽連結
-// @version      0.2.1
+// @version      0.2.2
 // @description  Let the links which have fake preview show their original links
 // @description:zh-tw 還原在噗浪上的偽裝預覽連結
 // @match        https://www.plurk.com/*
@@ -14,6 +14,11 @@
 // @grant        window.onurlchange
 // @connect      www.youtube.com
 // @connect      youtu.be
+// @connect      tinyurl.com
+// @connect      viglink.com
+// @connect      reurl.cc
+// @connect      is.gd
+// @connect      bit.ly
 // @connect      piee.pw
 // @connect      pse.ee
 // @connect      *
@@ -41,6 +46,14 @@
   }
 
   /* ============== */
+  const REG_SHORTURL = [
+    /^https?:\/\/tinyurl.com\/.*$/,
+    /^https?:\/\/reurl.cc\/.*$/,
+    /^https?:\/\/is.gd\/.*$/,
+    /^https?:\/\/bit.ly\/.*$/,
+    /^https?:\/\/.*\.piee.pw\/.*$/,
+    /^https?:\/\/.*\.pse.is\/.*$/
+  ];
   const REG_PICSEE = [
     // /http[s ]:\/\/pics.ee\/.*/,
     // /http[s ]:\/\/pse.ee\/.*/,
@@ -51,14 +64,18 @@
   async function detectUrl (url) {
     const urlList = valueGetSet('blacklist');
     let m = null;
-    REG_PICSEE.forEach(r => { if (!m) m = url.match(r); });
+    REG_SHORTURL.forEach(r => { if (!m) m = url.match(r); });
     if (m) {
-      await getHtmlText(url).then(function (res) {
-        const m = res.text.match(/location.replace\('([:/\w.&=?]+)'\)/) ||
-          res.text.match(
-            /<link rel="shortlink(?:Url|)" href="(https:\/\/youtu\.be\/\w+)"/);
-        url = m ? m[1] : url;
-      });
+      await getFinalURL(url).then(finalURL => { url = finalURL; });
+      m = null;
+      REG_PICSEE.forEach(r => { if (!m) m = url.match(r); });
+      if (m) {
+        await getHtmlText(url).then(function (res) {
+          const m = res.text.match(/location.replace\('([:/\w.&=?]+)'\)/);
+          url = m ? m[1] : res.url;
+        });
+        await getFinalURL(url).then(finalURL => { url = finalURL; });
+      }
     }
     let pass = true;
     urlList.forEach(u => {
@@ -83,6 +100,21 @@
                 res.responseHeaders.match(/content-type: text\/html/i)) {
               resolve({ text: res.responseText, url: res.finalUrl });
             } else { reject(res.statusText); }
+          }
+        });
+      } catch (e) { reject(e.message); }
+    });
+  }
+
+  function getFinalURL (url) {
+    return new Promise(function (resolve, reject) {
+      try {
+        GM_xmlhttpRequest({
+          method: 'HEAD',
+          url: url,
+          onload: function (res) {
+            if (res.status === 200) resolve(res.finalUrl);
+            else reject(url);
           }
         });
       } catch (e) { reject(e.message); }
